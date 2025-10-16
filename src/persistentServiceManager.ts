@@ -31,12 +31,13 @@ class PersistentServiceManager {
   }
 
   private async createProcess(serviceId: string, command: string[]): Promise<ServiceProcess> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       console.log(`Creating persistent process for service: ${serviceId}`);
       
       // 验证命令参数
       if (!command[0]) {
-        throw new Error('Invalid command: first argument is undefined');
+        reject(new Error('Invalid command: first argument is undefined'));
+        return;
       }
       
       // 构建环境变量
@@ -52,34 +53,76 @@ class PersistentServiceManager {
         }
       }
       
-      const childProcess = spawn(command[0], command.slice(1), {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: env
-      });
+      try {
+        const childProcess = spawn(command[0], command.slice(1), {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: env
+        });
 
-      const serviceProcess: ServiceProcess = {
-        id: serviceId,
-        process: childProcess,
-        command,
-        lastUsed: Date.now()
-      };
+        const serviceProcess: ServiceProcess = {
+          id: serviceId,
+          process: childProcess,
+          command,
+          lastUsed: Date.now()
+        };
 
-      // 监听进程退出
-      (childProcess as any).on('exit', () => {
-        console.log(`Service process ${serviceId} exited`);
-        this.processes.delete(serviceId);
-      });
+        // 监听进程退出
+        childProcess.on('exit', (code, signal) => {
+          console.log(`Service process ${serviceId} exited with code ${code}, signal ${signal}`);
+          this.processes.delete(serviceId);
+        });
 
-      // 监听错误
-      (childProcess as any).on('error', (error: Error) => {
-        console.error(`Service process ${serviceId} error:`, error);
-        this.processes.delete(serviceId);
-      });
+        // 监听错误
+        childProcess.on('error', (error: Error) => {
+          console.error(`Service process ${serviceId} error:`, error);
+          this.processes.delete(serviceId);
+          reject(error);
+        });
 
-      // 等待进程启动
-      setTimeout(() => {
-        resolve(serviceProcess);
-      }, 1000);
+        // 监听标准输出，确认进程正常启动
+        let startupBuffer = '';
+        const startupTimeout = setTimeout(() => {
+          childProcess.stdout?.off('data', stdoutHandler);
+          childProcess.stderr?.off('data', stderrHandler);
+          // 对于affine服务，延长启动时间
+          if (serviceId === 'affine') {
+            console.log(`Service process ${serviceId} startup timeout, but continuing due to authentication process`);
+            resolve(serviceProcess);
+          } else {
+            reject(new Error(`Service process ${serviceId} startup timeout`));
+          }
+        }, 10000); // 延长到10秒
+
+        const stdoutHandler = (data: Buffer) => {
+          startupBuffer += data.toString();
+          // 如果进程输出了任何内容，认为启动成功
+          if (startupBuffer.length > 0) {
+            clearTimeout(startupTimeout);
+            childProcess.stdout?.off('data', stdoutHandler);
+            childProcess.stderr?.off('data', stderrHandler);
+            console.log(`Service process ${serviceId} started successfully`);
+            resolve(serviceProcess);
+          }
+        };
+
+        const stderrHandler = (data: Buffer) => {
+          console.error(`Service process ${serviceId} stderr:`, data.toString());
+        };
+
+        childProcess.stdout?.on('data', stdoutHandler);
+        childProcess.stderr?.on('data', stderrHandler);
+
+        // 如果进程立即退出，捕获错误
+        childProcess.on('exit', (code, signal) => {
+          if (code !== 0) {
+            clearTimeout(startupTimeout);
+            reject(new Error(`Service process ${serviceId} exited immediately with code ${code}`));
+          }
+        });
+
+      } catch (error) {
+        reject(error);
+      }
     });
   }
 
@@ -158,7 +201,7 @@ class PersistentServiceManager {
       };
 
       // 获取affine服务命令 - 使用ES模块导入
-      const serviceConfig = await import('../services/services.json', { assert: { type: 'json' } });
+      const serviceConfig = await import('../services/services.json', { with: { type: 'json' } });
       const affineCommand = serviceConfig.default.affine?.command;
       
       if (!affineCommand) {

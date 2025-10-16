@@ -2,19 +2,31 @@ version: '3.8'
 
 services:
   mcp-gateway:
+    container_name: mcp-gateway
+    networks:
+      - mcp-gateway
     build: .
     ports:
-      - "3001:3001"
+      - "3001:3000"
     environment:
-      - MCP_GATEWAY_TOKEN=${MCP_GATEWAY_TOKEN:-testkey}
-      - PORT=3001
       - NODE_ENV=production
+      - MCP_GATEWAY_TOKEN=${MCP_GATEWAY_TOKEN:-testkey}
+      - PORT=3000
+    env_file:
+      .env
     volumes:
       - ./services:/app/services
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/metrics"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/metrics"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+
+networks:
+  mcp-gateway:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16  # 指定子网

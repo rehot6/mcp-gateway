@@ -10,9 +10,42 @@ import { setupSseResponse } from './transports/sseHandler.js';
 
 dotenv.config();
 
+// 请求日志中间件
+function requestLogger(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const timestamp = new Date().toISOString();
+  const clientIP = req.ip || req.connection.remoteAddress;
+  
+  console.log(`[${timestamp}] ${req.method} ${req.originalUrl} from ${clientIP}`);
+  console.log(`[${timestamp}] Headers:`, JSON.stringify(req.headers, null, 2));
+  
+  if (req.body && Object.keys(req.body).length > 0) {
+    console.log(`[${timestamp}] Request Body:`, JSON.stringify(req.body, null, 2));
+  }
+  
+  // 记录响应
+  const originalSend = res.send;
+  res.send = function(data) {
+    console.log(`[${timestamp}] Response Status: ${res.statusCode}`);
+    if (data && typeof data === 'string') {
+      try {
+        const parsedData = JSON.parse(data);
+        console.log(`[${timestamp}] Response Body:`, JSON.stringify(parsedData, null, 2));
+      } catch {
+        console.log(`[${timestamp}] Response Body:`, data.substring(0, 500) + (data.length > 500 ? '...' : ''));
+      }
+    } else if (data && typeof data === 'object') {
+      console.log(`[${timestamp}] Response Body:`, JSON.stringify(data, null, 2));
+    }
+    return originalSend.apply(this, arguments as any);
+  };
+  
+  next();
+}
+
 // 初始化 Express 应用
 const app = express();
 app.use(express.json({ limit: '10mb' }));
+app.use(requestLogger);
 
 // 设置 Prometheus 指标
 setupMetrics();

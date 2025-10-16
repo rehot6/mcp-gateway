@@ -6,6 +6,9 @@ WORKDIR /app
 # 复制 package 文件
 COPY package*.json ./
 
+# 安装curl工具（用于健康检查）
+RUN apk add --no-cache curl
+
 # 安装生产依赖
 RUN npm ci --only=production
 

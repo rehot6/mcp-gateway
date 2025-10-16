@@ -2,7 +2,9 @@
   "affine": {
     "id": "affine",
     "command": [
-      "affine-mcp"
+      "node",
+      "-e",
+      "require('affine-mcp-server')"
     ]
   },
   "test-service": {
