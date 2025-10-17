@@ -2,6 +2,10 @@
   "affine": {
     "id": "affine",
     "command": [
+      "npx",
+      "-y",
+      "-p",
+      "affine-mcp-server",
       "affine-mcp"
     ]
   },
