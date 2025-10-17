@@ -1,5 +1,6 @@
 // src/auth.ts
 import { Request, Response, NextFunction } from 'express';
+import { logger } from './logger.js';
 
 // 动态获取环境变量，避免模块加载时的时机问题
 const getValidToken = () => {
@@ -9,16 +10,16 @@ const getValidToken = () => {
 export const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
   const VALID_TOKEN = getValidToken();
   
-  console.log('=== AUTH DEBUG INFO ===');
-  console.log('Request path:', req.path);
-  console.log('Request method:', req.method);
+  logger.debug('=== AUTH DEBUG INFO ===');
+  logger.debug('Request path:', req.path);
+  logger.debug('Request method:', req.method);
   
   const authHeader = req.headers.authorization;
-  console.log('Authorization header:', authHeader);
-  console.log('Expected VALID_TOKEN:', VALID_TOKEN);
+  logger.debug('Authorization header received');
+  logger.debug('Expected VALID_TOKEN length:', VALID_TOKEN.length);
   
   if (!authHeader) {
-    console.log('ERROR: Missing authorization header');
+    logger.warn('ERROR: Missing authorization header');
     res.status(401).json({ 
       error: 'Missing authorization header',
       message: 'Authorization header is required'
@@ -30,19 +31,21 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction) 
   let token = authHeader;
   if (authHeader.startsWith('Bearer ')) {
     token = authHeader.substring(7);
-    console.log('Bearer format detected, extracted token:', token);
+    logger.debug('Bearer format detected');
   } else {
-    console.log('Direct token format, using:', token);
+    logger.debug('Direct token format detected');
   }
   
-  console.log('Token to compare:', token);
-  console.log('Expected token:', VALID_TOKEN);
-  console.log('Tokens match:', token === VALID_TOKEN);
+  // 只记录token是否存在，不显示实际token值
+  const tokenPresent = token.length > 0;
+  logger.debug('Token present:', tokenPresent);
   
-  if (token !== VALID_TOKEN) {
-    console.log('ERROR: Token mismatch');
-    console.log('Token length:', token.length);
-    console.log('Expected token length:', VALID_TOKEN.length);
+  // 验证token是否匹配
+  const isTokenValid = token === VALID_TOKEN;
+  logger.debug('Token validation result:', isTokenValid);
+  
+  if (!isTokenValid) {
+    logger.warn('ERROR: Token mismatch');
     res.status(403).json({ 
       error: 'Invalid token',
       message: 'Provided token does not match expected value'
@@ -50,6 +53,6 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction) 
     return;
   }
   
-  console.log('SUCCESS: Authentication passed');
+  logger.info('SUCCESS: Authentication passed');
   next();
 };

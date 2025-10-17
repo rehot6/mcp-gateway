@@ -7,6 +7,7 @@ import { setupMetrics, setupMetricsEndpoint } from './metrics.js';
 import { startGatewayStdioServer } from './transports/stdioServer.js';
 import { forwardToStdioService } from './transports/httpHandler.js';
 import { setupSseResponse } from './transports/sseHandler.js';
+import { logger } from './logger.js';
 
 dotenv.config();
 
@@ -15,26 +16,32 @@ function requestLogger(req: express.Request, res: express.Response, next: expres
   const timestamp = new Date().toISOString();
   const clientIP = req.ip || req.connection.remoteAddress;
   
-  console.log(`[${timestamp}] ${req.method} ${req.originalUrl} from ${clientIP}`);
-  console.log(`[${timestamp}] Headers:`, JSON.stringify(req.headers, null, 2));
+  logger.info(`[${timestamp}] ${req.method} ${req.originalUrl} from ${clientIP}`, {
+    clientIP,
+    method: req.method,
+    url: req.originalUrl
+  });
+  logger.debug(`[${timestamp}] Headers:`, { headers: req.headers });
   
   if (req.body && Object.keys(req.body).length > 0) {
-    console.log(`[${timestamp}] Request Body:`, JSON.stringify(req.body, null, 2));
+    logger.debug(`[${timestamp}] Request Body:`, { body: req.body });
   }
   
   // 记录响应
   const originalSend = res.send;
   res.send = function(data) {
-    console.log(`[${timestamp}] Response Status: ${res.statusCode}`);
+    logger.info(`[${timestamp}] Response Status: ${res.statusCode}`, {
+      statusCode: res.statusCode
+    });
     if (data && typeof data === 'string') {
       try {
         const parsedData = JSON.parse(data);
-        console.log(`[${timestamp}] Response Body:`, JSON.stringify(parsedData, null, 2));
+        logger.debug(`[${timestamp}] Response Body:`, { response: parsedData });
       } catch {
-        console.log(`[${timestamp}] Response Body:`, data.substring(0, 500) + (data.length > 500 ? '...' : ''));
+        logger.debug(`[${timestamp}] Response Body:`, { response: data.substring(0, 500) + (data.length > 500 ? '...' : '') });
       }
     } else if (data && typeof data === 'object') {
-      console.log(`[${timestamp}] Response Body:`, JSON.stringify(data, null, 2));
+      logger.debug(`[${timestamp}] Response Body:`, { response: data });
     }
     return originalSend.apply(this, arguments as any);
   };
@@ -72,7 +79,7 @@ app.post('/services', authMiddleware, (req, res) => {
     
     res.json({ message: `Service ${id} registered successfully` });
   } catch (error) {
-    console.error('Service registration error:', error);
+    logger.error('Service registration error', { error: error });
     res.status(500).json({ error: 'Failed to register service' });
   }
 });
@@ -83,7 +90,7 @@ app.get('/services', authMiddleware, (_req, res) => {
     const services = Object.keys(getService());
     res.json({ services });
   } catch (error) {
-    console.error('Service listing error:', error);
+    logger.error('Service listing error', { error: error });
     res.status(500).json({ error: 'Failed to list services' });
   }
 });
@@ -107,7 +114,7 @@ app.delete('/services/:id', authMiddleware, (req, res) => {
       res.status(404).json({ error: 'Service not found' });
     }
   } catch (error) {
-    console.error('Service removal error:', error);
+    logger.error('Service removal error', { error: error });
     res.status(500).json({ error: 'Failed to remove service' });
   }
 });
@@ -151,7 +158,7 @@ app.post('/initialize', authMiddleware, async (req, res) => {
       res.status(404).json({ error: 'Service not found' });
     }
   } catch (error) {
-    console.error('Initialize request error:', error);
+    logger.error('Initialize request error', { error: error });
     res.status(500).json({ error: 'Initialize request failed' });
   }
 });
@@ -180,7 +187,7 @@ app.post('/mcp/:serviceId', authMiddleware, async (req, res) => {
       res.status(404).json({ error: 'Service not found' });
     }
   } catch (error) {
-    console.error('Service error:', error);
+    logger.error('Service error', { error: error });
     res.status(500).json({ error: 'Service invocation failed' });
   }
 });
@@ -188,14 +195,16 @@ app.post('/mcp/:serviceId', authMiddleware, async (req, res) => {
 // 启动 HTTP 服务
 const PORT = process.env['PORT'] || 3000;
 app.listen(PORT, () => {
-  console.log(`MCP Gateway HTTP running on http://localhost:${PORT}`);
-  console.log(`Metrics available at http://localhost:${PORT}/metrics`);
+  logger.info(`MCP Gateway HTTP running on http://localhost:${PORT}`);
+  logger.info(`Metrics available at http://localhost:${PORT}/metrics`);
 });
 
 // 启动 STDIO 服务（用于被其他 MCP 客户端直接调用）
 if (process.stdin.isTTY === false) {
   // 检测是否在 STDIO 模式（无 TTY 表示被父进程调用）
-  startGatewayStdioServer().catch(console.error);
+  startGatewayStdioServer().catch((error) => {
+    logger.error('STDIO server error', { error: error });
+  });
 }
 
 export { app };

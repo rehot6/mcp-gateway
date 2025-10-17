@@ -1,6 +1,7 @@
 // src/serviceManager.ts
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { logger } from './logger.js';
 
 interface ServiceConfig {
   id: string;
@@ -29,8 +30,8 @@ function loadServices(): Record<string, ServiceConfig> {
   try {
     const data = readFileSync(SERVICES_FILE, 'utf8');
     return JSON.parse(data);
-  } catch (error) {
-    console.error('Failed to load services:', error);
+  } catch (error: any) {
+    logger.error('Failed to load services', { error: error.message });
     return {};
   }
 }
@@ -41,8 +42,8 @@ function saveServices(services: Record<string, ServiceConfig>): void {
   
   try {
     writeFileSync(SERVICES_FILE, JSON.stringify(services, null, 2), 'utf8');
-  } catch (error) {
-    console.error('Failed to save services:', error);
+  } catch (error: any) {
+    logger.error('Failed to save services', { error: error.message });
   }
 }
 

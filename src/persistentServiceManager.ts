@@ -1,5 +1,6 @@
 // src/persistentServiceManager.ts
 import { spawn } from 'child_process';
+import { logger } from './logger.js';
 
 interface ServiceProcess {
   id: string;
@@ -32,7 +33,7 @@ class PersistentServiceManager {
 
   private async createProcess(serviceId: string, command: string[]): Promise<ServiceProcess> {
     return new Promise((resolve, reject) => {
-      console.log(`Creating persistent process for service: ${serviceId}`);
+      logger.info(`Creating persistent process for service: ${serviceId}`, { serviceId });
       
       // 验证命令参数
       if (!command[0]) {
@@ -68,13 +69,13 @@ class PersistentServiceManager {
 
         // 监听进程退出
         childProcess.on('exit', (code, signal) => {
-          console.log(`Service process ${serviceId} exited with code ${code}, signal ${signal}`);
+          logger.info(`Service process ${serviceId} exited`, { serviceId, code, signal });
           this.processes.delete(serviceId);
         });
 
         // 监听错误
         childProcess.on('error', (error: Error) => {
-          console.error(`Service process ${serviceId} error:`, error);
+          logger.error(`Service process ${serviceId} error`, { serviceId, error: error.message });
           this.processes.delete(serviceId);
           reject(error);
         });
@@ -86,7 +87,7 @@ class PersistentServiceManager {
           childProcess.stderr?.off('data', stderrHandler);
           // 对于affine服务，延长启动时间
           if (serviceId === 'affine') {
-            console.log(`Service process ${serviceId} startup timeout, but continuing due to authentication process`);
+            logger.warn(`Service process ${serviceId} startup timeout, but continuing due to authentication process`, { serviceId });
             resolve(serviceProcess);
           } else {
             reject(new Error(`Service process ${serviceId} startup timeout`));
@@ -100,13 +101,13 @@ class PersistentServiceManager {
             clearTimeout(startupTimeout);
             childProcess.stdout?.off('data', stdoutHandler);
             childProcess.stderr?.off('data', stderrHandler);
-            console.log(`Service process ${serviceId} started successfully`);
+            logger.info(`Service process ${serviceId} started successfully`, { serviceId });
             resolve(serviceProcess);
           }
         };
 
         const stderrHandler = (data: Buffer) => {
-          console.error(`Service process ${serviceId} stderr:`, data.toString());
+          logger.error(`Service process ${serviceId} stderr`, { serviceId, stderr: data.toString() });
         };
 
         childProcess.stdout?.on('data', stdoutHandler);
@@ -182,7 +183,7 @@ class PersistentServiceManager {
     const now = Date.now();
     for (const [serviceId, serviceProcess] of this.processes.entries()) {
       if (now - serviceProcess.lastUsed > this.MAX_IDLE_TIME) {
-        console.log(`Cleaning up idle service process: ${serviceId}`);
+        logger.info(`Cleaning up idle service process: ${serviceId}`, { serviceId });
         serviceProcess.process.kill();
         this.processes.delete(serviceId);
       }
@@ -191,7 +192,7 @@ class PersistentServiceManager {
 
   shutdown(): void {
     for (const [serviceId, serviceProcess] of this.processes.entries()) {
-      console.log(`Shutting down service process: ${serviceId}`);
+      logger.info(`Shutting down service process: ${serviceId}`, { serviceId });
       serviceProcess.process.kill();
     }
     this.processes.clear();
