@@ -122,6 +122,40 @@ app.get('/sse/:clientId', authMiddleware, (req, res) => {
   }
 });
 
+// 初始化端点：客户端通过此端点发送初始化请求，网关转发到MCP服务器
+app.post('/initialize', authMiddleware, async (req, res) => {
+  try {
+    const { serviceId, request } = req.body;
+    
+    if (!serviceId || !request) {
+      res.status(400).json({ error: 'Missing serviceId or request' });
+      return;
+    }
+    
+    const services = getService();
+    if (services[serviceId]) {
+      const service = services[serviceId];
+      const startTime = Date.now();
+      const response = await forwardToStdioService(service.command, request);
+      const duration = Date.now() - startTime;
+      
+      // 记录 Prometheus 指标
+      const metrics = (globalThis as any).metrics;
+      if (metrics) {
+        metrics.requestDuration.observe({ service: serviceId }, duration / 1000);
+        metrics.requestsTotal.inc({ service: serviceId });
+      }
+      
+      res.json(response);
+    } else {
+      res.status(404).json({ error: 'Service not found' });
+    }
+  } catch (error) {
+    console.error('Initialize request error:', error);
+    res.status(500).json({ error: 'Initialize request failed' });
+  }
+});
+
 // HTTP POST 端点：转发到指定服务
 app.post('/mcp/:serviceId', authMiddleware, async (req, res) => {
   const { serviceId } = req.params;
@@ -153,17 +187,9 @@ app.post('/mcp/:serviceId', authMiddleware, async (req, res) => {
 
 // 启动 HTTP 服务
 const PORT = process.env['PORT'] || 3000;
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
   console.log(`MCP Gateway HTTP running on http://localhost:${PORT}`);
   console.log(`Metrics available at http://localhost:${PORT}/metrics`);
-  
-  // 自动登录affine服务
-  try {
-    const { persistentServiceManager } = await import('./persistentServiceManager.js');
-    await persistentServiceManager.autoLoginAffine();
-  } catch (error) {
-    console.error('Auto login initialization failed:', error);
-  }
 });
 
 // 启动 STDIO 服务（用于被其他 MCP 客户端直接调用）

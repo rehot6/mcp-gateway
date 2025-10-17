@@ -113,7 +113,7 @@ class PersistentServiceManager {
         childProcess.stderr?.on('data', stderrHandler);
 
         // 如果进程立即退出，捕获错误
-        childProcess.on('exit', (code, signal) => {
+        childProcess.on('exit', (code) => {
           if (code !== 0) {
             clearTimeout(startupTimeout);
             reject(new Error(`Service process ${serviceId} exited immediately with code ${code}`));
@@ -177,56 +177,6 @@ class PersistentServiceManager {
     });
   }
 
-  // 自动登录affine服务
-  async autoLoginAffine(): Promise<void> {
-    if (!process.env['AFFINE_EMAIL'] || !process.env['AFFINE_PASSWORD']) {
-      console.log('Auto login skipped: AFFINE_EMAIL or AFFINE_PASSWORD not set');
-      return;
-    }
-
-    try {
-      console.log('Attempting auto login for affine service...');
-      
-      const loginRequest = {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'tools/call',
-        params: {
-          name: 'sign_in',
-          arguments: {
-            email: process.env['AFFINE_EMAIL'],
-            password: process.env['AFFINE_PASSWORD']
-          }
-        }
-      };
-
-      // 获取affine服务命令 - 使用ES模块导入
-      const serviceConfig = await import('../services/services.json', { with: { type: 'json' } });
-      const affineCommand = serviceConfig.default.affine?.command;
-      
-      if (!affineCommand) {
-        console.log('Auto login skipped: affine service not configured');
-        return;
-      }
-
-      // 预创建affine进程，确保后续请求使用同一个进程
-      await this.getProcess('affine', affineCommand);
-      console.log('Affine service process pre-created for auto login');
-      
-      const response = await this.sendRequest('affine', affineCommand, loginRequest);
-      console.log('Auto login response:', response);
-      
-      if (response.result?.content?.[0]?.text?.includes('"signedIn":true')) {
-        console.log('Auto login successful!');
-        // 等待一段时间确保认证状态完全建立
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      } else {
-        console.log('Auto login may have failed:', response);
-      }
-    } catch (error) {
-      console.error('Auto login failed:', error);
-    }
-  }
 
   private cleanupIdleProcesses(): void {
     const now = Date.now();
